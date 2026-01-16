@@ -198,14 +198,14 @@ vec4 isectSphere(vec3 ro, vec3 rd, float r) {
   if (h < 0.0) { return vec4(FAR); }
 
   h = sqrt(h);
-  float rl = -b - h;
-  if (rl > 0.0) {
-    return vec4((ro + rd * rl) / r, rl);
+  float t = -b - h;
+  if (t > 0.0) {
+    return vec4(normalize(ro + rd * t), t);
   }
 
-  rl = -b + h;
-  if (rl > 0.0) {
-    return vec4(-(ro + rd * rl) / r, rl);
+  t = -b + h;
+  if (t > 0.0) {
+    return vec4(-normalize(ro + rd * t), t);
   }
 
   return vec4(FAR);
@@ -226,12 +226,14 @@ vec4 isectCapsule(vec3 ro, vec3 rd, vec3 tail, float r) {
   if (h < 0.0) { return vec4(FAR); }
 
   float t = (-b - sqrt(h)) / a;
+  if (t < 0.0) { return vec4(FAR); }
+
   float y = clamp(ot + t * td, 0.0, tt);
   if (y > 0.0 && y < tt) {
     // you might delete this if the precision doesn't matter
-    return vec4((ro - y / tt * tail + rd * t) / r, t);
+    return vec4((ro + rd * t - y / tt * tail) / r, t);
   }
-  return isectSphere(ro - y / tt * tail, rd, r);
+  return isectSphere(ro - clamp(y, 0.0, tt) / tt * tail, rd, r);
 }
 
 // == marcher ======================================================================================
@@ -308,6 +310,17 @@ void main() {
         }
       }
 
+      // camera i guess
+      isect2 = isectSphere(ro - vec3(0.8, 3, -2), rd, 0.1);
+      if (isect2.w < isect.w) {
+        isect = isect2;
+        material = mat3(
+          vec3(0.2), // cringe
+          vec3(0),
+          vec3(0.04, 1, 0.0)
+        );
+      }
+
       // sign
       ro -= vec3(-1.4, 1.5, -3.0);
       isect2 = isectBox(ro, rd, vec3(0.6, 1.2, 0.1));
@@ -370,7 +383,7 @@ void main() {
         );
       }
 
-      isect2 = isectBox(ro, rd, vec3(0.01, 0.6, 1.8));
+      isect2 = isectBox(ro, rd, vec3(0.03, 0.6, 1.8));
       if (isect2.w < isect.w) {
         isect = isect2;
 
@@ -414,7 +427,7 @@ void main() {
       isect2 = isectCapsule(ro - vec3(0.0, 0.85, 0.0), rd, vec3(0, 0, 20), 0.02);
       isect3 = isectCapsule(ro - vec3(0.0, 0.85, 0.0), rd, vec3(1, 0, 0), 0.02);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
-      isect3 = isectCapsule(ro - vec3(0.0, 0.8, 0.3), rd, vec3(1, -1, 0), 0.012);
+      isect3 = isectCapsule(ro - vec3(0.0, 0.8, 0.3), rd, vec3(2, -1, 0), 0.012);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
       isect3 = isectCapsule(ro - vec3(0.0, 0.8, 0.3), rd, vec3(0, 0.05, 0), 0.012);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
@@ -422,7 +435,7 @@ void main() {
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
       isect3 = isectCapsule(ro - vec3(0.0, 0.65, 0.0), rd, vec3(1, 0, 0), 0.02);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
-      isect3 = isectCapsule(ro - vec3(0.0, 0.6, 0.3), rd, vec3(1, -1, 0), 0.012);
+      isect3 = isectCapsule(ro - vec3(0.0, 0.6, 0.3), rd, vec3(2, -1, 0), 0.012);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
       isect3 = isectCapsule(ro - vec3(0.0, 0.6, 0.3), rd, vec3(0, 0.05, 0), 0.012);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
@@ -510,33 +523,33 @@ void main() {
           vec3 dice = hash3f(cell);
           rpt.x -= 0.6;
 
-          vec2 tactilep = tilep;
+          vec3 sdgTactile = vec3(FAR);
 
           if (floor(cell.x / 2.0) == 0.0 && floor(cell.y / 2.0) == 0.0) {
             // tactile tiles - warning
-            tactilep = mod(tactilep - 0.04, 0.08) - 0.04;
-            material = mat3(
-              vec3(0.8, 0.4, 0.1),
-              vec3(0.0),
-              vec3(0.2, 0.0, 0.0)
+            sdgTactile = sdgbox2(
+              mod(tilep - 0.035, 0.07) - 0.035,
+              vec2(0.01),
+              0.01
             );
           } else if (cell.x == 0.0 && cell.y > 0.0 || cell.y == 0.0 && cell.x > 0.0) {
             // tactile tiles - directional
-            tactilep = cell.x == 0.0 ? tactilep : tactilep.yx;
-            tactilep.x = mod(tactilep.x, 0.1) - 0.05;
-            tactilep.y -= clamp(tactilep.y, -0.15, 0.15);
-            material = mat3(
-              vec3(0.8, 0.4, 0.1),
-              vec3(0.0),
-              vec3(0.2, 0.0, 0.0)
+            vec2 pp = cell.x == 0.0 ? tilep : tilep.yx;
+            pp.x = mod(pp.x, 0.09) - 0.045;
+            sdgTactile = sdgbox2(
+              pp,
+              vec2(0.0, 0.14),
+              0.03
             );
           }
 
-          bool i_isNotTactile = tactilep == tilep;
-          if (i_isNotTactile) {
-            // when the hit is not tactile tiles
-            tactilep += 1.0; // effectively disabling the tactile
-
+          if (sdgTactile.z < FAR) {
+            material = mat3(
+              vec3(0.8, 0.4, 0.1),
+              vec3(0),
+              vec3(0.2, 0, 0)
+            );
+          } else {
             tilep = mod(rpt.xy, 0.5) - 0.25;
             sdgTile = sdgbox2(tilep, vec2(0.235), 0.01);
             dice = hash3f(floor(rpt / 0.5));
@@ -561,12 +574,11 @@ void main() {
             );
           }
 
-          float i_tactiled = length(tactilep) - 0.025;
-          vec2 i_tactile2 = i_isNotTactile ? vec2(0) : step(abs(i_tactiled), 0.005) * normalize(tactilep);
+          vec2 i_tactile2 = step(abs(sdgTactile.z + 0.005), 0.005) * sdgTactile.xy;
           vec2 i_gap2 = step(abs(sdgTile.z + 0.002), 0.002) * sdgTile.xy;
           vec2 i_noise2 = perlin23(40.0 * rpt.xy).xy;
           isect.xyz = normalize(vec3(
-            i_tactile2 + i_gap2 + 0.01 * i_noise2 + 0.02 * dice.xy,
+            i_tactile2 + i_gap2 + 0.01 * i_noise2 + 0.02 * (dice.xy - 0.5),
             1
           ) * basis);
         } else if (rp.y > 2.8) {
@@ -605,7 +617,7 @@ void main() {
           	vec2 i_gap2 = step(abs(sdgTile.z + 0.002), 0.002) * sdgTile.xy;
             vec2 i_noise2 = perlin23(40.0 * rpt.xy).xy;
             isect.xyz = normalize(basis * vec3(
-              i_gap2 + 0.01 * i_noise2 + 0.03 * dice.xy,
+              i_gap2 + 0.01 * i_noise2 + 0.03 * (dice.xy - 0.5),
               1
             ));
           }
