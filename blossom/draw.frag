@@ -145,9 +145,21 @@ vec3 cyclicNoise(vec3 p, float pers) {
 }
 
 // == sdfs =========================================================================================
-float sdbox2(vec2 p, vec2 s) {
+
+// Ref: https://iquilezles.org/articles/distgradfunctions3d/
+vec3 sdgbox2(vec2 p, vec2 s, float r) {
   vec2 d = abs(p) - s;
-  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+  float g = max(d.x, d.y);
+
+  if (g > 0.0) {
+    // outside
+    vec2 q = max(d, 0.0);
+    float l = length(q);
+    return vec3(sign(p) * q / l, l - r);
+  } else {
+    // inside
+    return vec3(sign(p) * step(vec2(g), d), g - r);
+  }
 }
 
 // == isects =======================================================================================
@@ -215,6 +227,10 @@ vec4 isectCapsule(vec3 ro, vec3 rd, vec3 tail, float r) {
 
   float t = (-b - sqrt(h)) / a;
   float y = clamp(ot + t * td, 0.0, tt);
+  if (y > 0.0 && y < tt) {
+    // you might delete this if the precision doesn't matter
+    return vec4((ro - y / tt * tail + rd * t) / r, t);
+  }
   return isectSphere(ro - y / tt * tail, rd, r);
 }
 
@@ -316,7 +332,7 @@ void main() {
       ro += vec3(-1.4, 1.5, -3.0);
 
       // ad
-      ro -= vec3(1, 1.8, 3);
+      ro -= vec3(1, 1.8, 2.5);
       isect2 = isectBox(ro - vec3(0, 0, -1.8), rd, vec3(0.05, 0.6, 0.05));
       isect3 = isectBox(ro - vec3(0, 0, 1.8), rd, vec3(0.05, 0.6, 0.05));
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
@@ -365,7 +381,7 @@ void main() {
           vec3(MTL_AD)
         );
       }
-      ro += vec3(1, 1.8, 3);
+      ro += vec3(1, 1.8, 2.5);
 
       // exit
       ro -= vec3(-0.1, 2.7, 2.0);
@@ -394,12 +410,21 @@ void main() {
       ro += vec3(-0.1, 2.7, 2.0);
 
       // pipe
-      isect2 = isectCapsule(ro - vec3(0.8, 1.0, 6.0), rd, vec3(0, 0, 20), 0.05);
-      isect3 = isectCapsule(ro - vec3(0.8, 1.0, 6.0), rd, vec3(1, 0, 0), 0.05);
+      ro -= vec3(0.9, 0, 4);
+      isect2 = isectCapsule(ro - vec3(0.0, 0.85, 0.0), rd, vec3(0, 0, 20), 0.02);
+      isect3 = isectCapsule(ro - vec3(0.0, 0.85, 0.0), rd, vec3(1, 0, 0), 0.02);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
-      isect3 = isectCapsule(ro - vec3(0.8, 0.8, 6.0), rd, vec3(0, 0, 20), 0.03);
+      isect3 = isectCapsule(ro - vec3(0.0, 0.8, 0.3), rd, vec3(1, -1, 0), 0.012);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
-      isect3 = isectCapsule(ro - vec3(0.8, 0.8, 6.0), rd, vec3(1, 0, 0), 0.03);
+      isect3 = isectCapsule(ro - vec3(0.0, 0.8, 0.3), rd, vec3(0, 0.05, 0), 0.012);
+      isect2 = isect2.w < isect3.w ? isect2 : isect3;
+      isect3 = isectCapsule(ro - vec3(0.0, 0.65, 0.0), rd, vec3(0, 0, 20), 0.02);
+      isect2 = isect2.w < isect3.w ? isect2 : isect3;
+      isect3 = isectCapsule(ro - vec3(0.0, 0.65, 0.0), rd, vec3(1, 0, 0), 0.02);
+      isect2 = isect2.w < isect3.w ? isect2 : isect3;
+      isect3 = isectCapsule(ro - vec3(0.0, 0.6, 0.3), rd, vec3(1, -1, 0), 0.012);
+      isect2 = isect2.w < isect3.w ? isect2 : isect3;
+      isect3 = isectCapsule(ro - vec3(0.0, 0.6, 0.3), rd, vec3(0, 0.05, 0), 0.012);
       isect2 = isect2.w < isect3.w ? isect2 : isect3;
       if (isect2.w < isect.w) {
         isect = isect2;
@@ -409,6 +434,7 @@ void main() {
           vec3(0.1, 1.0, 0.0)
         );
       }
+      ro += vec3(0.9, 0, 4);
 
       // chrome sphere
       ro -= vec3(0.0, 1.6, -1.0);
@@ -445,14 +471,11 @@ void main() {
         break;
       }
 
-      // fragColor = vec4(0.5 + 0.5 * isect.xyz, 1.0);
-      // return;
-
       vec3 rp = ro + rd * isect.w;
 
       if (material[2].z == MTL_WALL) {
-        mat3 b = orthBas(isect.xyz);
-        vec3 rpt = rp * b;
+        mat3 basis = orthBas(isect.xyz);
+        vec3 rpt = basis * rp;
 
         if (isect.y == -1.0) {
           // ceil
@@ -482,7 +505,7 @@ void main() {
 
           rpt.x += 0.6;
           vec2 tilep = mod(rpt.xy, 0.4) - 0.2;
-          float tiled = sdbox2(tilep, vec2(0.18)) - 0.01;
+          vec3 sdgTile = sdgbox2(tilep, vec2(0.18), 0.01);
           vec3 cell = floor(rpt / 0.4) + vec3(0.0, 6.0, 0.0);
           vec3 dice = hash3f(cell);
           rpt.x -= 0.6;
@@ -515,7 +538,7 @@ void main() {
             tactilep += 1.0; // effectively disabling the tactile
 
             tilep = mod(rpt.xy, 0.5) - 0.25;
-            tiled = sdbox2(tilep, vec2(0.235)) - 0.01;
+            sdgTile = sdgbox2(tilep, vec2(0.235), 0.01);
             dice = hash3f(floor(rpt / 0.5));
 
             material = mat3(
@@ -529,7 +552,7 @@ void main() {
             );
           }
 
-          if (tiled > 0.0) {
+          if (sdgTile.z > 0.0) {
             // gap
             material = mat3(
               vec3(0.02),
@@ -540,12 +563,12 @@ void main() {
 
           float i_tactiled = length(tactilep) - 0.025;
           vec2 i_tactile2 = i_isNotTactile ? vec2(0) : step(abs(i_tactiled), 0.005) * normalize(tactilep);
-          vec2 i_gap2 = step(abs(tiled), 0.005) * sign(tilep) * max(abs(tilep) - (i_isNotTactile ? 0.235 : 0.18), 0.0);
-          vec2 i_noise2 = perlin23(40.0 * rpt.xy + 100.0 * dice.xy).xy;
+          vec2 i_gap2 = step(abs(sdgTile.z + 0.002), 0.002) * sdgTile.xy;
+          vec2 i_noise2 = perlin23(40.0 * rpt.xy).xy;
           isect.xyz = normalize(vec3(
             i_tactile2 + i_gap2 + 0.01 * i_noise2 + 0.02 * dice.xy,
             1
-          ) * b);
+          ) * basis);
         } else if (rp.y > 2.8) {
           // ceil plate
           material = mat3(
@@ -562,8 +585,8 @@ void main() {
           );
         } else {
           // wall
-          vec2 tilep = mod(rpt.xy, 0.1) - 0.05;
-          float tiled = sdbox2(tilep, vec2(0.043)) - 0.003 + 0.001 * cyclicNoise(8.0 * rpt.xyy, 0.5).x;
+          vec2 i_pTile = mod(rpt.xy, 0.1) - 0.05;
+          vec3 sdgTile = sdgbox2(i_pTile, vec2(0.043), 0.003);
           vec3 dice = hash3f(floor(rpt.xyy / 0.1));
 
           material = mat3(
@@ -572,24 +595,23 @@ void main() {
             vec3(0.5, 0.0, 0.0)
           );
 
-          if (tiled < 0.0) {
+          if (sdgTile.z < 0.0) {
             material = mat3(
               vec3(0.7, 0.74, 0.8),
               vec3(0.0),
               vec3(0.14, 0.0, 0.0)
             );
 
-            vec3 i_d = tiled < -0.002
-              ? vec3(0.0, 0.0, 1.0)
-              : normalize(vec3(sign(tilep) * max(abs(tilep) - 0.043, 0.0), 0.0));
-            vec3 i_g = smoothstep(0.0, -0.001, tiled) * smoothstep(-0.002, -0.001, tiled) * i_d;
-            vec2 d = vec2(0.0, 4E-3);
-            vec3 i_n = perlin23(40.0 * rpt.xy + 100.0 * dice.xy);
-            isect.xyz = normalize(isect.xyz + (0.5 * i_g + 0.004 * i_n + 0.02 * dice.xyz) * b);
+          	vec2 i_gap2 = step(abs(sdgTile.z + 0.002), 0.002) * sdgTile.xy;
+            vec2 i_noise2 = perlin23(40.0 * rpt.xy).xy;
+            isect.xyz = normalize(basis * vec3(
+              i_gap2 + 0.01 * i_noise2 + 0.03 * dice.xy,
+              1
+            ));
           }
         }
       } else if (material[2].z == MTL_SIGN) {
-        vec2 p = material[0].xy * 3.0;
+        vec2 p = material[0].xy * 2.5;
         p.x -= clamp(floor(p.x), -1.0, 0.0) + 0.53;
         vec2 pt = p;
         pt.y = abs(pt.y) - 0.4;
@@ -601,12 +623,7 @@ void main() {
           || (abs(p.x - 0.25) < 0.1) && p.y > -0.7 && p.y < 0.4
         );
 
-        pt = material[0].xy;
-        pt -= sign(pt) * min(abs(pt), 0.2);
-
-        bool bb = length(pt) < 0.25;
-
-        vec3 col = b ? vec3(1, 0.2, 0) : bb ? vec3(0.01) : vec3(1);
+        vec3 col = b ? vec3(1, 0.2, 0) : vec3(1);
 
         pt = material[0].xy;
         col *= exp2(2.0 * sin(6.0 * pt.x) * sin(6.0 * pt.x) * cos(pt.y) * cos(pt.y) - 2.0);
