@@ -12,7 +12,8 @@ void main() {
 
   vec3 color = tex.rgb / tex.a;
 
-  // aces filmic tone mapping
+  // ACES filmic tone mapping
+  // Ref: https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl
   color *= mat3(
     0.59719, 0.35458, 0.04823,
     0.07600, 0.90834, 0.01566,
@@ -31,6 +32,7 @@ void main() {
 
   color = clamp(color, 0.0, 1.0);
 
+  // sRGB OETF
   color = mix(
     color * 12.92,
     pow(color, vec3(0.4167)) * 1.055 - 0.055,
